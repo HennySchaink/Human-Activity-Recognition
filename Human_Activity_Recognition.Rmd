@@ -1,0 +1,146 @@
+---
+title: "Human Activity Recognition using Linear Discriminant Analysis"
+author: "Henny Schaink"
+date: "Monday, March 01, 2016"
+output: html_document
+---
+### Introduction
+
+This project deals with research on Human Activity Recognition. The aim of this project is to predict the type of activity that is done by a test person on basis of measurements performed by wearable accelleometers on the belt, forearm, arm, and dumbbell. The data is collected using 6 test persons, who performed 5 different activities: sitting, sitting down, standing up, standing, walking.
+
+The data used in this project is obtained from: http://groupware.les.inf.puc-rio.br/har
+On this website more information about this experiment can be found.
+
+This project is done in partial fulfilment of the Coursera course 'Practical machine learning'.
+
+### Data-analysis
+
+The libraries used in this study:
+```{r} 
+   library(graphics); library(ggplot2); library(caret); library(dplyr)
+   set.seed(13234)
+```
+
+The data is downloaded from the website mentioned above. Subsequently, the data is read from disk, and the dimensions of the training and test sets are determined.
+```{r}
+   trainingSet<-read.csv("pml-training.csv",header=TRUE)
+   testingSet<-read.csv("pml-testing.csv")
+   dim_trainingSet<-dim(trainingSet)
+   dim_testingSet<-dim(testingSet)
+   print(c("training: ",dim_trainingSet))
+   print(c("testing: ",dim_testingSet))
+```
+
+The first column of the training and test sets numbers the order of the instances at which the data is taken. The last column of these datasets contains the outcome of the experiments, classe, classified from A to E. Those are the values that should be predicted by the machine learning model.
+
+Columns 2-7 of this dataset just describe the administrative side of the experiments, like for instance the date on which a specific dataset is obtained or the person who did the specific exercise. For this reason these columns are omitted from the training and test sets. 
+```{r}
+   training<-trainingSet[,-(2:7)]
+   testing<-testingSet[,-(2:7)]
+```
+
+Close inspection of the data shows that the data in the database consists of the actual experimental values, as well as the statistical values that are extracted from the experimental values, such as the average, skewness, kurtosis, and standard deviation. A large part of these statistical values are imported as factors and as a result they tend to hinder various calculations presented below. For this reason, the following calculations are performed using the experimental values only:
+```{r}
+   selection<-c(2:4,31:42,55:62,78:80,107:118,145:153,154) 
+   train_select<-select(training,selection)
+   test_select<-select(testing,selection)
+   dim_train_select<-dim(train_select)
+```
+
+In order to make the first exploratory plots, the following function is made:
+```{r}
+   plot_expl<- function(istart,iend,iplot,data,xlabel,ylabel) {  
+       for (i in istart:iend) {
+          if(i!=iplot) {
+              if(i==istart) {
+                   pl_output<-plot(x=data[,iplot],y=data[,i],
+                                   xlab=xlabel,ylab=ylabel,col=data$classe)
+              }
+              else {
+                   pl_output<-pl_output+
+                              points(x=data[,iplot],y=data[,i],xlab=xlabel,ylab=ylabel,
+                                     col=data$classe) 
+              }   
+          }
+       }
+       pl_output
+     }
+```
+
+Two examples of exporatory plots generated with this function, are shown below:
+````{r}
+   col_names<-colnames(train_select)
+   par(mfrow=c(1,2))
+## plot 1 ----------
+   istart<-1
+   iend<-2
+   iplot<-2
+   xlabel<-as.character(col_names[iplot])
+   ylabel<-as.character(col_names[istart])
+   plot1<-plot_expl(istart,iend,iplot,train_select,xlabel,ylabel)
+   legend("topright",pch=1,
+          col=c("black","red","green","blue","cyan"),
+          legend=c("A","B","C","D","E"))
+   title(main="figure 1a")
+## plot 2 ---------
+   istart<-1
+   iend<-dim_train_select[2]-1
+   iplot<-2
+   xlabel<-as.character(col_names[iplot])
+   ylabel<-"all other parameters"
+   plot2<-plot_expl(istart,iend,iplot,train_select,xlabel,ylabel)
+   legend("topright",pch=1,
+         col=c("black","red","green","blue","cyan"),
+         legend=c("A","B","C","D","E")) 
+   title(main="figure 1b")
+```
+
+Figure 1a illustrates clearly that it is extremely challenging to describe the data using a linear model or a generalised linear model. In figure 1b we find that the values of different actvities A-E appear to be more or less grouped. This result suggests that it interesting to look at the density distibutions for the outcomes A-E, as function of one of the parameters, such as for example "pitch_belt".
+```{r}
+   qplot(pitch_belt,colour=classe,data=train_select,geom="density",main="figure 2")
+```
+
+From figure 2 it is possible extract the relative probability that, given a certain   value y for the pitch_belt, the activity belongs to one of the classes A-E:
+
+     P(classe = x | pitch_belt = y)       with x = A,B,C,D,E
+
+The sum over all x values equals 1:
+
+     sum_x= A,B,C,D,E_ [ P(classe = x | pitch_belt = y) ] = 1
+
+A method to analyse this type of distributions is the Linear Discriminant Analysis (LDA).     
+
+First, the training set is separated into 2 parts: 70% of the training data is used to develop the model and the remaining 30% of the data is used for the optimalisation of the model. 
+```{r}
+   inTrain<-createDataPartition(y=train_select$classe,p=0.7,list=FALSE)
+   train1<-train_select[inTrain,]
+   trainTest<-train_select[-inTrain,]
+```
+
+The model is constructed using the linear discriminant analysis (lda):
+
+```{r}
+   modLda<-train(classe ~. ,data=train1,method="lda")
+   print(modLda)
+```
+
+Different combinations of parameters were tested, as well as the influence of preprocessing the data using Principal Components Analysis. 
+
+The best result is obtained using the parameters given in the array 'selection', which is shown above. Application of the best model to the trainTest-data yields:
+```{r}
+   plda<-predict(modLda,trainTest)
+   print(confusionMatrix(plda,trainTest$classe))
+```
+
+### Result
+
+Finally the model is tested by applying it to the test set. 
+```{r}
+ptest<-predict(modLda,test_select)
+print(ptest)
+```
+Unfortunately, it is found that the test set read in does not match the training set completely: it does not have a column "classe" with activities A-E. Instead it has a column "problem_id" with numbers 1-20, i.e. it has 20 classes instead of 5. Therefore, it is not possible to make a statement about the accuracy of the predicted values for the test set. The confusionmatrix given above is the best indication of the performance of the model. The model has an accuracy of 0.69.
+
+
+
+
